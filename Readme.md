@@ -11,19 +11,18 @@ ORGANISATION = '<<<organization>>>'
 
 ```
 
-Необходимые значения api-key и token нужно получить в [trello](https://trello.com/app-key), а id организации можно получить в URL если кликнуть на имя нужной команды в подменю "КОМАНДЫ" на основной странице [trello](https://trello.com/) после авторизации.
+Необходимые значения api-key и token нужно получить в [trello](https://trello.com/app-key), а id организации можно получить в URL если кликнуть на имя нужной команды в подменю "КОМАНДЫ" на основной странице [trello](https://trello.com/) после авторизации. У меня он выглядит так: _https://trello.com/_**user08081543**_/home_
 Параметры работы указываются в словаре `dt` в тексте скрипта.
 
 ```python
 dt = {
-     'boardName':     - Название доски
-    ,'listName':      - Название списка | None
-    ,'fieldName':     - Название пользовательского поля
-    ,'fieldType':     - Тип значения пользовательского поля
+     'boardName': "Обслуживание АРПСТН-091" - Название доски
+    ,'listName':  "Запланировано"           - Название списка | None
+    ,'fieldName': "task-id"                 - Название пользовательского поля
+    ,'fieldType': "number"                  - Тип значения пользовательского поля
 }
 
 ```
 
-Если `listName` не указано, то будут обработаны все (открытые) карточки на доске.
-Кстати о типе. Все попытки присвоить значение числовому полю не увенчались. [API](https://developer.atlassian.com/cloud/trello/guides/rest-api/getting-started-with-custom-fields/) упорно возвращал ошибку _400, {"message":"Invalid custom field item value.","error":"ERROR"}_. Как только я изменил [тип значения поля](https://developer.atlassian.com/cloud/trello/rest/api-group-cards/#api-cards-idcard-customfield-idcustomfield-item-put) и, соответственно, запрос с `number` на `text`, ошибки пропали.
-
+Если `listName` не указано, то будут обработаны все (открытые) карточки на доске.  
+~~Кстати о типе. Все попытки присвоить значение числовому полю не увенчались. [API](https://developer.atlassian.com/cloud/trello/guides/rest-api/getting-started-with-custom-fields/) упорно возвращал ошибку _400, {"message":"Invalid custom field item value.","error":"ERROR"}_. Как только я изменил [тип значения поля](https://developer.atlassian.com/cloud/trello/rest/api-group-cards/#api-cards-idcard-customfield-idcustomfield-item-put) и, соответственно, запрос с `number` на `text`, ошибки пропали.~~
