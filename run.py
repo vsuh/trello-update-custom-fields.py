@@ -31,6 +31,9 @@ log.addHandler(c_handler)
 log.setLevel(logging.DEBUG)
 
 def get_board(name):
+    """
+    возвращает описание (словарь) доски по её имени
+    """
     log.debug(f"Ищем доску с именем `{name}`")
     for brd in api.organizations.get_board(idOrg_or_name=ORGANISATION, filter='open'):
         if name.upper() == brd['name'].upper():
@@ -39,6 +42,9 @@ def get_board(name):
     return None
 
 def get_c_field(brd, name):
+    """
+    возвращает описание (словарь) пользовательского поля по его имени
+    """
     import requests
     import json
     log.debug(f"Ищем в свойствах доски `{brd['name']}` Custom field с именем `{name}`")
@@ -69,6 +75,9 @@ def get_c_field(brd, name):
     return None
 
 def get_lists(brd, name):
+    """
+    возвращает описание (словарь) списка по его имени. Если имя не указано (Null), возвращается массив описаний всех списков
+    """
     log.debug(f"Получаем списки на доске `{brd['name']}` с именем `{name if not name is None else '<>'}` (или все)")
     lists = api.boards.get_list_filter(filter='open', board_id=brd['id'])
     if name is None:
@@ -97,7 +106,6 @@ def update_custom_field(card_id,custom_field_id,value_type,value):
 
 
 fld = get_c_field(get_board(dt['boardName']), dt['fieldName'])
-
 lts = get_lists(get_board(dt['boardName']), dt['listName'])
 ers = 0
 for lst in lts:
