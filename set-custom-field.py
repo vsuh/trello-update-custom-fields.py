@@ -6,13 +6,14 @@
 import trello as tl
 import pprint
 import logging
+
 from auth import APIKY, TOKEN, ORGANISATION
 
 dt = {
      'boardName':     "*Текучка*"
     ,'listName':      None
-    ,'fieldName':     "id"
-    ,'fieldType':     "number"
+    ,'fieldName':     "created"
+    ,'fieldType':     "date"
 }
 
 
@@ -64,7 +65,8 @@ def get_c_field(brd, name):
     "GET",
     url,
     headers=headers,
-    params=query
+    params=query,
+    verify=False
     )
     log.debug(f"Получаем все польз. поля на доске `{brd['name']}`")
     flds = json.loads(response.text)
@@ -96,12 +98,21 @@ def get_all_cards(lst):
     log.debug(f"получаем все карточки из списка `{lst['name']}`(id={lst['id']})")
     return api.lists.get_card_filter(filter='open', idList=lst['id'])
 
+def cardDate(card):
+        from datetime import datetime as dt
+        import pytz
+#        print('---','ID:', card['id'],'#',int(card['id'][0:8],16))
+        creation_time = dt.fromtimestamp(int(card['id'][0:8],16))
+        msk = pytz.timezone('Europe/Moscow')
+        log.debug(f'Получили дату карточки № {card["idShort"]}: {msk.localize(creation_time).astimezone().isoformat()} из строки {int(card["id"][0:8],16)}')
+        return msk.localize(creation_time).astimezone().isoformat()
+
 def update_custom_field(card_id,custom_field_id,value_type,value):
     import requests
     url = f'https://api.trello.com/1/card/{card_id}/customField/{custom_field_id}/item?key={APIKY}&token={TOKEN}'
     
     payload = {'token':TOKEN,'key':APIKY,'value':{value_type: value}}
-    request = requests.put(url,json=payload) 
+    request = requests.put(url,json=payload,verify=False) 
     return request
 
 
@@ -110,8 +121,8 @@ lts = get_lists(get_board(dt['boardName']), dt['listName'])
 ers = 0
 for lst in lts:
     crds = get_all_cards(lst)
-    for crd in crds:
-        rp = update_custom_field(crd['id'], fld['id'],dt['fieldType'], str(crd['idShort']))
+    for card in crds:
+        rp = update_custom_field(card['id'], fld['id'], dt['fieldType'], cardDate(card))
         if rp.status_code < 400:
             log.debug(f"{lst['name'].upper()} RC: {rp.status_code} {rp.content}")
         else:

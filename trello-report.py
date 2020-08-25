@@ -9,6 +9,9 @@ import argparse
 import pytz
 from datetime import datetime as dt, timedelta as td
 from dateutil.relativedelta import relativedelta as rd
+import requests
+import json
+
 
 from auth import APIKY, TOKEN, ORGANISATION
 
@@ -18,14 +21,16 @@ p = pprint.PrettyPrinter(indent=4, sort_dicts=True, compact=True)
 pp = p.pprint
 log = logging.getLogger(__name__)
 parser = argparse.ArgumentParser(add_help=True , description='Формирование отчета по карточкам trello')
+VERIFY_SSL = True
 REPFILE = "report.csv"
 rigth_names = ['d', 'cd', 'pd', 'w', 'cw', 'pw', 'm', 'cm', 'pm', 'y', 'cy', 'py']
 margins = {'name':None, 'past':None, 'beg':None, 'end':None, 'date': None}
-cust_fields_names = ['id', 'Автор', '≡']
+cust_fields_names = ['id', 'Автор', '≡', 'created']
+cf_options = None
 
 def init():
     c_handler = logging.StreamHandler()
-    c_handler.setLevel(logging.DEBUG)
+    c_handler.setLevel(logging.INFO)
     c_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s', datefmt='%d-%m-%y %H:%M:%S')
     c_handler.setFormatter(c_format)
     log.addHandler(c_handler)
@@ -86,12 +91,12 @@ def set_period_by_name():
         beg = dt(today.year, today.month, 1, 0, 0, 0, 0)
         if shift>0:
             beg = beg - rd(months=shift)
-        margins['beg'] = beg
-        margins['end'] = beg + rd(months=1) - rd(seconds=1)
+        margins['beg'] = msk.localize(beg)
+        margins['end'] = msk.localize( beg + rd(months=1) - rd(seconds=1) )
     if mode == 'y':
         beg = dt(today.year-shift, 1, 1, 0, 0, 0, 0)
-        margins['beg'] = beg
-        margins['end'] = beg + rd(years=1) - rd(seconds=1)
+        margins['beg'] = msk.localize( beg )
+        margins['end'] = msk.localize( beg + rd(years=1) - rd(seconds=1) )
     log.debug(f"вычисленный период: c {margins['beg'].strftime('%d-%m-%y')} по {margins['end'].strftime('%d-%m-%y %H:%M:%S')}")
 
 def get_board_by_name(name):
@@ -108,15 +113,13 @@ def get_board_by_name(name):
 def cardDate(card):
         creation_time = dt.fromtimestamp(int(card['id'][0:8],16))
         msk = pytz.timezone('Europe/Moscow')
-        log.debug(f'Получили дату карточки № {card["idShort"]}: {creation_time.strftime("%d-%m-%y %H:%M:%S")}')
+        log.debug(f'Получили дату карточки № {card["idShort"]}: {creation_time.strftime("%d-%m-%y %H:%M:%S")} из строки {int(card["id"][0:8],16)}')
         return msk.localize(creation_time)
 
 def get_c_field(brd, name):
     """
     возвращает описание (словарь) пользовательского поля по его имени
     """
-    import requests
-    import json
     log.debug(f"Ищем в свойствах доски `{brd['name']}` Custom field с именем `{name}`")
     id = brd['id']
     url = f'https://api.trello.com/1/boards/{id}/customFields'
@@ -134,7 +137,8 @@ def get_c_field(brd, name):
     "GET",
     url,
     headers=headers,
-    params=query
+    params=query,
+    verify=VERIFY_SSL
     )
     log.debug(f"Получаем все польз. поля на доске `{brd['name']}`")
     flds = json.loads(response.text)
@@ -148,6 +152,7 @@ def get_custom_fields(board):
     """
     возвращает словарь словарей с идентификаторами custom fields из доски board
     """
+
     ret = {}
     for cf_name in cust_fields_names:
         cf = get_c_field(board, cf_name)
@@ -164,19 +169,69 @@ def get_custom_field_value(card_id,custom_field_id):
     """
     получает значение custom field из карточки
     """
-    import requests
-    url = f'https://api.trello.com/1/card/{card_id}/customField/{custom_field_id}/item?key={APIKY}&token={TOKEN}'
-    
+    url = f'https://api.trello.com/1/cards/{card_id}/?fields={custom_field_id}&customFieldItems=true&key={APIKY}&token={TOKEN}'
     payload = {'token':TOKEN,'key':APIKY}
-    request = requests.get(url,json=payload) 
-    return request
+    headers = {
+    "Accept": "application/json"
+    }
+
+    request = requests.get(url, json=payload, headers=headers, verify=VERIFY_SSL) 
+    if request.ok:
+        cf_items = json.loads(request.content)
+        for cf_field in cf_items['customFieldItems']:
+            if cf_field['idCustomField'] == custom_field_id:
+                try:
+                    return cf_field['value']
+                except KeyError as e:
+                    # получить значение опции по idValue
+                    return cf_field['idValue']
+    else:
+        return None
+
+def get_cf_options_of_board(board_id, idValue):
+    global cf_options
+    url = f'https://api.trello.com/1/boards/{board_id}/customFields?key={APIKY}&token={TOKEN}'
+    payload = {'token':TOKEN,'key':APIKY}
+    headers = {
+    "Accept": "application/json"
+    }
+    if not cf_options:
+        request = requests.get(url, json=payload, headers=headers, verify=VERIFY_SSL)
+        cf_options = json.loads(request.content)
+    for i in cf_options:
+        if i['type'] == 'list':
+            for opt in i['options']:
+                if opt['id'] == idValue:
+                    return opt['value']
+
+    return None
+
+def string_value(value, board):
+    if type(value) == str:
+        value = get_cf_options_of_board(board['id'], value)
+    if value is None:
+        return None
+    for (typ, val) in value.items(): pass
+    if typ == 'checkbox':
+        return val
+    if typ == 'date':
+        return val
+    if typ == 'list':
+        return 'list item'
+    if typ == 'number':
+        return val
+    if typ == 'text':
+        return val
+    return 'unknown type of c-field'
+
 
 
 def get_cards_in_period():
     """
     возвращает список карточек удовлетворяющих условию
     """
-    boards = ['*Текучка*', 'Архив']
+    boards = ['*Текучка*']
+    # boards = ['*Текучка*', 'Архив']
     cards = []
     for name in boards:
         brd = get_board_by_name(name)
@@ -189,12 +244,13 @@ def get_cards_in_period():
             card = {
                  'date': crddate
                 ,'name': crd['name']
-                ,'desc': crd['desc'] if len(crd['desc'])<94 else crd['desc'][:90]+'...'
+                ,'desc': crd['desc'] if len(crd['desc'])<194 else crd['desc'][:190]+'...'
                 ,'bord': 'name'
             }
             for cf_name, dict_cf in custom_fields.items():
                 cf_value = get_custom_field_value(crd['id'], dict_cf['id'])
-                card.update( {dict_cf: cf_value} )
+                value_to_add_to_dict = { cf_name: string_value(cf_value, brd) }
+                card.update( value_to_add_to_dict )
             cards.append(card)
         return cards
 
