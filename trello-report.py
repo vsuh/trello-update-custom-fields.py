@@ -1,6 +1,7 @@
 #!venv/Scripts/python.exe
 """
 Скрипт создает файл с отчетом по карточкам за определенный период
+(multi)
 """
 import trello as tl
 import pprint
