@@ -7,6 +7,7 @@ import pprint
 import logging
 import argparse
 import pytz
+import re
 from datetime import datetime as dt, timedelta as td
 from dateutil.relativedelta import relativedelta as rd
 import requests
@@ -20,9 +21,11 @@ MAXERRS = 5
 p = pprint.PrettyPrinter(indent=4, sort_dicts=True, compact=True)
 pp = p.pprint
 log = logging.getLogger(__name__)
-parser = argparse.ArgumentParser(add_help=True , description='Формирование отчета по карточкам trello')
+parser = argparse.ArgumentParser(add_help=True
+    , description='Формирование отчета по карточкам trello'
+    , formatter_class=argparse.RawDescriptionHelpFormatter)
 VERIFY_SSL = True
-REPFILE = "report.csv"
+REPFILE = "report.tsv"
 rigth_names = ['d', 'cd', 'pd', 'w', 'cw', 'pw', 'm', 'cm', 'pm', 'y', 'cy', 'py']
 margins = {'name':None, 'past':None, 'beg':None, 'end':None, 'date': None}
 cust_fields_names = ['id', 'Автор', '≡', 'created']
@@ -34,15 +37,30 @@ def init():
     c_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s', datefmt='%d-%m-%y %H:%M:%S')
     c_handler.setFormatter(c_format)
     log.addHandler(c_handler)
-    log.setLevel(logging.DEBUG)
+    # log.setLevel(logging.DEBUG)
     parser.add_argument('--period', dest='period')
     parser.add_argument('--past', dest='past', default=1, type=int)
     parser.add_argument('--date', dest='date', help="date as DD-MM-YY")
-    parser.usage = f'python {__file__} --period pw'
-    parser.epilog = "-----------------------"
+    parser.usage = f'python {__file__} [OPTIONS]'
+    
+    parser.epilog = '''
+PERIOD: d | w | m | y  тип периода: день, неделя, месяц или год
+DATE: date дата, входящая в период в формате DD-MM-YY
+PAST: nn количество периодов от текущего назад
+
+ПРИМЕР:
+
+    %(prog)s --period m --past 4
+            список карточек за месяц, отстоящий на 4 месяца от текущего
+
+    %(prog)s --period w --date 14-10-20
+            список карточек с 12 по 18 октября 2020 г.
+ 
+    см. примеры в README.md
+    '''
     args = parser.parse_args()
     if not (args.period or args.date):
-        raise SystemExit("Требуется параметр period или date")
+        raise SystemExit("Требуется параметр period или date (см. --help)")
     
     if args.period and not args.period in rigth_names:
         raise KeyError(f'Допускается период из списка {rigth_names}')
@@ -144,7 +162,7 @@ def get_c_field(brd, name):
     flds = json.loads(response.text)
     for ff in flds:
         if ff['name'].upper() == name.upper():
-            log.info(f"Нашли поле `{ff['name']}`(id={ff['id']}) на доске `{brd['name']}`")
+            log.debug(f"На доске `{brd['name']}` нашли польз. поле `{ff['name']}`(id={ff['id']}) ")
             return ff
     return None
 
@@ -182,7 +200,7 @@ def get_custom_field_value(card_id,custom_field_id):
             if cf_field['idCustomField'] == custom_field_id:
                 try:
                     return cf_field['value']
-                except KeyError as e:
+                except KeyError:
                     # получить значение опции по idValue
                     return cf_field['idValue']
     else:
@@ -205,6 +223,8 @@ def get_cf_options_of_board(board_id, idValue):
                     return opt['value']
 
     return None
+def get_list_of_card(listId):
+    return "План"
 
 def string_value(value, board):
     if type(value) == str:
@@ -241,11 +261,14 @@ def get_cards_in_period():
             crddate = cardDate(crd)
             if crddate > margins['end'] or crddate < margins['beg']:
                 continue
+            log.debug(f'Обрабатывается карточка № {crd["idShort"]}: {crd["name"][:30]} (id=`{crd["id"]}`)')
             card = {
                  'date': crddate
                 ,'name': crd['name']
                 ,'desc': crd['desc'] if len(crd['desc'])<194 else crd['desc'][:190]+'...'
-                ,'bord': 'name'
+                ,'bord': brd['name']
+                ,'link': crd['shortUrl']
+                ,'list': api.cards.get_list(crd['id'])['name']
             }
             for cf_name, dict_cf in custom_fields.items():
                 cf_value = get_custom_field_value(crd['id'], dict_cf['id'])
@@ -257,7 +280,13 @@ def get_cards_in_period():
 def report():
     set_period_by_name()
     cards_list = get_cards_in_period()
-    pp(cards_list)
+    log.info(f'Формируется отчет из {len(cards_list)} карточек')
+    # pp(cards_list)
+    print('Дата', 'Список', "Задача", "Описание", "Доска", "Номер", "Автор", "Раздел", "Ссылка", sep='\t')
+    for card in sorted(cards_list, key=lambda x: x['date']):
+        _name = re.sub("^\s+|\t|\n|\r|\s+$", '', card['name'])
+        _desc = re.sub("^\s+|\t|\n|\r|\s+$", '', card['desc'])
+        print(card['date'].strftime("%d-%m-%y %H:%M:%S"), card['list'], _name, _desc, card['bord'], card['id'], card['Автор'], card['≡'], card['link'], sep='\t')
     
 
 init()
