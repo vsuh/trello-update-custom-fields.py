@@ -4,17 +4,34 @@
 чтобы при переносе карточки на другую доску номер задачи не потерялся
 """
 import trello as tl
+import requests
+import json
 import pprint
 import logging
-
 from auth import APIKY, TOKEN, ORGANISATION
 
-dt = {
+# TODO: протокол писать еще и в файл
+# TODO: добавить функцию форматирования строки лога
+
+VERIFY_SSL = True
+logging.captureWarnings(True)
+tasks = [
+#     {
+#      'boardName':     "Архив"
+#     ,'listName':      None
+#     ,'fieldName':     "created"
+#     ,'fieldType':     "date"
+#     ,'chngTempl':     "cardDate"
+#   }
+#   ,
+{
      'boardName':     "*Текучка*"
     ,'listName':      None
-    ,'fieldName':     "created"
-    ,'fieldType':     "date"
-}
+    ,'fieldName':     "id"
+    ,'fieldType':     "number"
+    ,'chngTempl':     "cardId"
+  }
+]
 
 
 api = tl.TrelloApi(apikey=APIKY, token=TOKEN)
@@ -29,7 +46,7 @@ c_handler.setLevel(logging.DEBUG)
 c_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
 c_handler.setFormatter(c_format)
 log.addHandler(c_handler)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 def get_board(name):
     """
@@ -66,13 +83,13 @@ def get_c_field(brd, name):
     url,
     headers=headers,
     params=query,
-    verify=False
+    verify=VERIFY_SSL
     )
     log.debug(f"Получаем все польз. поля на доске `{brd['name']}`")
     flds = json.loads(response.text)
     for ff in flds:
         if ff['name'].upper() == name.upper():
-            log.info(f"Нашли поле `{ff['name']}`(id={ff['id']}) на доске `{brd['name']}`")
+            log.info(f"Нашли польз. поле `{ff['name']}`(id={ff['id']}) на доске `{brd['name']}`")
             return ff
     return None
 
@@ -95,42 +112,93 @@ def get_all_cards(lst):
     """
     возвращает коллекцию (список) незакрытых карточек из списка `lst`
     """
-    log.debug(f"получаем все карточки из списка `{lst['name']}`(id={lst['id']})")
+    log.debug(f"Получаем все карточки из списка `{lst['name']}`(id={lst['id']})")
     return api.lists.get_card_filter(filter='open', idList=lst['id'])
 
+def cardId(card) -> str:
+    return str(card['idShort'])
+
 def cardDate(card):
-        from datetime import datetime as dt
-        import pytz
-#        print('---','ID:', card['id'],'#',int(card['id'][0:8],16))
-        creation_time = dt.fromtimestamp(int(card['id'][0:8],16))
-        msk = pytz.timezone('Europe/Moscow')
-        log.debug(f'Получили дату карточки № {card["idShort"]}: {msk.localize(creation_time).astimezone().isoformat()} из строки {int(card["id"][0:8],16)}')
-        return msk.localize(creation_time).astimezone().isoformat()
+    """
+    возвращает дату создания переданной карточки
+    """
+    from datetime import datetime as dt
+    import pytz
+
+    creation_time = dt.fromtimestamp(int(card['id'][0:8],16))
+    msk = pytz.timezone('Europe/Moscow')
+    log.debug(f'Получили дату карточки № {card["idShort"]}: {msk.localize(creation_time).astimezone().isoformat()} из строки {int(card["id"][0:8],16)}')
+    return msk.localize(creation_time).astimezone().isoformat()
+
+def get_custom_field_value(card_id, custom_field_id):
+    """
+    получает значение custom field из карточки
+    """
+    url = f'https://api.trello.com/1/cards/{card_id}/?fields={custom_field_id}&customFieldItems=true&key={APIKY}&token={TOKEN}'
+    payload = {'token':TOKEN,'key':APIKY}
+    headers = {
+    "Accept": "application/json"
+    }
+
+    request = requests.get(url, json=payload, headers=headers, verify=VERIFY_SSL) 
+    if request.ok:
+        cf_items = json.loads(request.content)
+        for cf_field in cf_items['customFieldItems']:
+            if cf_field['idCustomField'] == custom_field_id:
+                try:
+                    return cf_field['value']
+                except KeyError:
+                    # получить значение опции по idValue
+                    return cf_field['idValue']
+    else:
+        return None
 
 def update_custom_field(card_id,custom_field_id,value_type,value):
     import requests
     url = f'https://api.trello.com/1/card/{card_id}/customField/{custom_field_id}/item?key={APIKY}&token={TOKEN}'
     
     payload = {'token':TOKEN,'key':APIKY,'value':{value_type: value}}
-    request = requests.put(url,json=payload,verify=False) 
+    request = requests.put(url,json=payload,verify=VERIFY_SSL) 
     return request
 
 
-fld = get_c_field(get_board(dt['boardName']), dt['fieldName'])
-lts = get_lists(get_board(dt['boardName']), dt['listName'])
 ers = 0
-for lst in lts:
-    crds = get_all_cards(lst)
-    for card in crds:
-        rp = update_custom_field(card['id'], fld['id'], dt['fieldType'], cardDate(card))
-        if rp.status_code < 400:
-            log.debug(f"{lst['name'].upper()} RC: {rp.status_code} {rp.content}")
-        else:
-            ers += 1
-            log.error(f"{lst['name'].upper()} RC:({ers}) {rp.status_code} {rp.content} {rp.request.body}")
+for task in tasks:
+    board = get_board(task['boardName'])
+    list_of_lists = get_lists(board, task['listName'])
+    log.info(f'Нашли {len(list_of_lists)} списков на доске {board["name"]}')
+    custom_fileld_desc = get_c_field(board, task['fieldName'])
+    for list in list_of_lists:
+        crds = get_all_cards(list)
+        log.info(f'Нашли {len(crds)} карточек в списке \"{list["name"]}\"')
+        for card in crds:
+            old_value = get_custom_field_value(card['id'], custom_fileld_desc['id'])
+            log.debug(f'Получили предыдущее значение поля "{old_value}"')
+            if task['chngTempl'] == 'cardDate':
+                if not old_value is None:
+                    log.debug(f'тогда пропускаем')
+                    continue
+                new_value = cardDate(card)
+            if task['chngTempl'] == 'cardId':
+                if not (old_value is None and board['name'] == '*Текучка*'):
+                    log.debug(f'тогда пропускаем')
+                    continue
+                new_value = cardId(card)
+            log.info(f'Изменение польз.поля "{task["fieldName"]}" карточки {card["id"]} на значение "{new_value}"')
+            result = update_custom_field(card['id'], custom_fileld_desc['id'], task['fieldType'], new_value)
+            if result.status_code < 400:
+                log.debug(f"{list['name'].upper()} RC: {result.status_code} {result.content}")
+            else:
+                ers += 1
+                log.error(f"{list['name'].upper()} RC:({ers}) {result.status_code} {result.content} {result.request.body}")
+            if ers > MAXERRS:
+                log.error('Прервали перебор карточек прервали после 5 ошибок')
+                break
         if ers > MAXERRS:
-            log.error('Выполнение прервали после 5 ошибок')
+            log.error('Прервали перебор списков после 5 ошибок')
             break
-if ers:
-    log.error("Завершено с ошибками")
+    if ers:
+        log.error("Завершено с ошибками")
+    else:
+        log.info("Завершено без ошибок")
 
