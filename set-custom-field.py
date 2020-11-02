@@ -10,8 +10,8 @@ import pprint
 import logging
 from auth import APIKY, TOKEN, ORGANISATION
 
-# TODO: протокол писать еще и в файл
-# TODO: добавить функцию форматирования строки лога
+# ✔ TODO: протокол писать еще и в файл
+# ✔ TODO: добавить функцию форматирования строки лога
 
 VERIFY_SSL = True
 logging.captureWarnings(True)
@@ -40,13 +40,30 @@ MAXERRS = 5
 p = pprint.PrettyPrinter(indent=4, sort_dicts=True, compact=True)
 pp = p.pprint
 
-log = logging.getLogger(__name__)
-c_handler = logging.StreamHandler()
-c_handler.setLevel(logging.DEBUG)
-c_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
-c_handler.setFormatter(c_format)
-log.addHandler(c_handler)
-log.setLevel(logging.INFO)
+def log_prepare():
+    log = logging.getLogger(__file__)
+    c_handler = logging.StreamHandler()
+    c_handler.setLevel(logging.DEBUG)
+    f_handler = logging.FileHandler('LOG.LOG')
+    f_handler.setLevel(logging.DEBUG)
+    prv_factory = logging.getLogRecordFactory()
+
+    def record_factory(*args, **kwargs):
+        # lvl = args[1]
+        record = prv_factory(*args, **kwargs)
+        record.levelname = record.levelname.rjust(8)
+        return record
+
+    logging.setLogRecordFactory(record_factory)
+
+    c_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
+    f_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+    c_handler.setFormatter(c_format)
+    f_handler.setFormatter(f_format)
+    log.addHandler(c_handler)
+    log.addHandler(f_handler)
+    log.setLevel(logging.INFO)
+    return log
 
 def get_board(name):
     """
@@ -161,7 +178,7 @@ def update_custom_field(card_id,custom_field_id,value_type,value):
     request = requests.put(url,json=payload,verify=VERIFY_SSL) 
     return request
 
-
+log = log_prepare()
 ers = 0
 for task in tasks:
     board = get_board(task['boardName'])
