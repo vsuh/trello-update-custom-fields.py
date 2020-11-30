@@ -3,19 +3,21 @@
 Скрипт создает файл с отчетом по карточкам за определенный период
 (multi)
 """
-import trello as tl
-import pprint
-import logging
 import argparse
-import pytz
-import re
-from datetime import datetime as dt, timedelta as td
-from dateutil.relativedelta import relativedelta as rd
-import requests
 import json
+import logging
+import pprint
+import re
+import sys
+from datetime import datetime as dt
+from datetime import timedelta as td
 
+import pytz
+import requests
+from dateutil.relativedelta import relativedelta as rd
 
-from auth import APIKY, TOKEN, ORGANISATION
+import trello as tl
+from auth import APIKY, ORGANISATION, TOKEN
 
 api = tl.TrelloApi(apikey=APIKY, token=TOKEN)
 MAXERRS = 5
@@ -29,10 +31,13 @@ VERIFY_SSL = True
 REPFILE = "report.tsv"
 rigth_names = ['d', 'cd', 'pd', 'w', 'cw', 'pw', 'm', 'cm', 'pm', 'y', 'cy', 'py']
 margins = {'name':None, 'past':None, 'beg':None, 'end':None, 'date': None}
-cust_fields_names = ['id', 'Автор', '≡', 'created']
+cust_fields_names = ['id', 'Автор', '≡', 'created', 'Срочно', 'В хранилище']
 cf_options = None
+fout = None
+oenc = 'cp1251'
 
 def init():
+    global fout
     c_handler = logging.StreamHandler()
     c_handler.setLevel(logging.INFO)
     c_format = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s', datefmt='%d-%m-%y %H:%M:%S')
@@ -42,19 +47,21 @@ def init():
     parser.add_argument('--period', dest='period')
     parser.add_argument('--past', dest='past', default=1, type=int)
     parser.add_argument('--date', dest='date', help="date as DD-MM-YY")
+    parser.add_argument('--file', dest='outfile', help='output file name')
     parser.usage = f'python {__file__} [OPTIONS]'
     
     parser.epilog = '''
 PERIOD: d | w | m | y  тип периода: день, неделя, месяц или год
 DATE: date дата, входящая в период в формате DD-MM-YY
 PAST: nn количество периодов от текущего назад
+OUTFILE: имя файла для вывода
 
 ПРИМЕР:
 
     %(prog)s --period m --past 4
             список карточек за месяц, отстоящий на 4 месяца от текущего
 
-    %(prog)s --period w --date 14-10-20
+    %(prog)s --period w --date 14-10-20 -f out.tsv
             список карточек с 12 по 18 октября 2020 г.
  
     см. примеры в README.md
@@ -69,6 +76,7 @@ PAST: nn количество периодов от текущего назад
     margins['name'] = args.period if args.period else 'd'
     margins['past'] = args.past
     margins['date'] = dt.strptime(args.date,'%d-%m-%y') if args.date else None
+    fout = args.outfile
 
 def set_period_by_name():
     if margins['date'] is None:
@@ -184,7 +192,7 @@ def get_custom_fields(board):
     return ret
 
 
-def get_custom_field_value(card_id,custom_field_id):
+def get_custom_field_value(card_id, custom_field_id):
     """
     получает значение custom field из карточки
     """
@@ -233,8 +241,8 @@ def string_value(value, board):
     if value is None:
         return None
     for (typ, val) in value.items(): pass
-    if typ == 'checkbox':
-        return val
+    if typ == 'checked':
+        return True if val=='true' else False
     if typ == 'date':
         return val
     if typ == 'list':
@@ -244,7 +252,6 @@ def string_value(value, board):
     if typ == 'text':
         return val
     return 'unknown type of c-field'
-
 
 
 def get_cards_in_period():
@@ -279,15 +286,27 @@ def get_cards_in_period():
         return cards
 
 def report():
+    global fout, oenc
+    
     set_period_by_name()
     cards_list = get_cards_in_period()
     log.info(f'Формируется отчет из {len(cards_list)} карточек')
-    # pp(cards_list)
-    print('Дата', 'Список', "Задача", "Описание", "Доска", "Номер", "Автор", "Раздел", "Ссылка", sep='\t')
+    
+    if fout is None:
+        fh = sys.stdout
+    else:
+        fh = open(fout, 'w', encoding=oenc)
+    print('Дата', 'Список', "Задача", "Описание", "Доска", "Номер", "Автор", "Раздел", "Срочно", "В хранилище", "Ссылка", sep='\t', file=fh)
     for card in sorted(cards_list, key=lambda x: x['date']):
-        _name = re.sub("^\s+|\t|\n|\r|\s+$", '', card['name'])
-        _desc = re.sub("^\s+|\t|\n|\r|\s+$", '', card['desc'])
-        print(card['date'].strftime("%d-%m-%y %H:%M:%S"), card['list'], _name, _desc, card['bord'], card['id'], card['Автор'], card['≡'], card['link'], sep='\t')
+        _name = re.sub(r"^\s+|\t|\n|\r|\s+$", '', card['name'])
+        _desc = re.sub(r"^\s+|\t|\n|\r|\s+$", '', card['desc'])
+        print(card['date'].strftime("%d-%m-%y %H:%M:%S")
+            , card['list'], _name, _desc, card['bord'], card['id'], card['Автор']
+            , card['≡']
+            , ('+'.encode(encoding=oenc, errors='ignore').decode(oenc, 'ignore') if card['Срочно']==True else " ")
+            , ('+'.encode(encoding=oenc, errors='ignore').decode(oenc, 'ignore') if card['В хранилище']==True else " ")
+            , card['link'], sep='\t', file=fh)
+        # print(card['date'].strftime("%d-%m-%y %H:%M:%S"), card['list'], _name, _desc, card['bord'], card['id'], card['Автор'], card['≡'], (str('✔').decode(oenc) if card['Срочно']==True else '`'), (str('✔').decode(oenc) if card['В хранилище']==True else '`'), card['link'], sep='\t')
     
 
 init()
