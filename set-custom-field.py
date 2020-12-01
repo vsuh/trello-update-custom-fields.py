@@ -19,21 +19,21 @@ from auth import APIKY, ORGANISATION, TOKEN
 VERIFY_SSL = True
 logging.captureWarnings(True)
 tasks = [
-#     {    'taskName': 'Дата создания'
-#     ,'boardName':     ["Архив", "*Текучка*"]
-#     ,'listName':      None
-#     ,'fieldName':     "created"
-#     ,'fieldType':     "date"
-#     ,'chngTempl':     "cardDate"
-#   }
-#   ,
-{    'taskName': 'Номер карточки'
-    ,'boardName':     ["*Текучка*"]
+    {    'taskName': 'Дата создания'
+    ,'boardName':     ["Архив", "*Текучка*"]
     ,'listName':      None
-    ,'fieldName':     "id"
-    ,'fieldType':     "number"
-    ,'chngTempl':     "cardId"
+    ,'fieldName':     "created"
+    ,'fieldType':     "date"
+    ,'chngTempl':     "cardDate"
   }
+  ,
+# {    'taskName': 'Номер карточки'
+#     ,'boardName':     ["*Текучка*"]
+#     ,'listName':      None
+#     ,'fieldName':     "id"
+#     ,'fieldType':     "number"
+#     ,'chngTempl':     "cardId"
+#   }
 ]
 
 

@@ -176,10 +176,10 @@ def prepare_movements():
     return movements
 
 def do_move(mv:dict):
-    log.debug(f"Карточка № {mv['card']['idShort']} id={mv['card']['id']} переносится на доску: `{mv['targetBoard']['name']}`")
+    log.info(f"Карточка № {mv['card']['idShort']} id={mv['card']['id']} переносится на доску: `{mv['targetBoard']['name']}/{mv['targetList']['name']}`")
     ret = api.cards.update_idBoard(mv['card']['id'], mv['targetList']['idBoard'])
     # ret - новая карточка (в новой доске)
-    log.debug(f"Карточка № {mv['card']['idShort']} id={mv['card']['id']} переносится в список: `{mv['targetList']['name']}`")
+    # log.debug(f"Карточка № {mv['card']['idShort']} id={mv['card']['id']} переносится в список: `{mv['targetList']['name']}`")
     ret = api.cards.update_idList(mv['card']['id'], mv['targetList']['id'])
     # ret - новая карточка (в новом списке)
 
